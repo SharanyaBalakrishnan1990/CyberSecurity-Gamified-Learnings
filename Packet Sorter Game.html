@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Packet Sorter Game</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles for the game */
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            overflow: hidden; /* Hide scrollbars, especially for canvas */
+            /* Enhanced background for the whole body */
+            background: linear-gradient(to bottom right, #1a202c, #2d3748); /* Dark gradient from gray-900 to gray-800 equivalent */
+        }
+        canvas {
+            background-color: #2d3748; /* Darker blue-gray */
+            border: 4px solid #4a5568; /* Border for canvas */
+            border-radius: 12px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+            margin-bottom: 20px; /* Space below canvas */
+        }
+        .btn {
+            padding: 0.75rem 1.5rem; /* px-6 py-3 */
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* shadow-lg */
+            transition: transform 0.3s ease-in-out, background-color 0.3s ease-in-out; /* transition duration-300 ease-in-out */
+        }
+        .btn:hover {
+            transform: scale(1.05); /* hover:scale-105 */
+        }
+        .btn-primary {
+            background-color: #3b82f6; /* bg-blue-600 */
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #2563eb; /* hover:bg-blue-700 */
+        }
+        .btn-success {
+            background-color: #10b981; /* bg-green-600 */
+            color: white;
+        }
+        .btn-success:hover {
+            background-color: #059669; /* hover:bg-green-700 */
+        }
+        .btn-danger {
+            background-color: #ef4444; /* bg-red-600 */
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #dc2626; /* hover:bg-red-700 */
+        }
+        .btn-secondary {
+            background-color: #6b7280; /* bg-gray-500 */
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #4b5563; /* hover:bg-gray-600 */
+        }
+        .selected-packet-info {
+            margin-top: 1rem; /* mt-4 */
+            padding: 0.75rem; /* p-3 */
+            background-color: #1f2937; /* bg-gray-800 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* shadow-md */
+            font-size: 0.875rem; /* text-sm */
+            text-align: center;
+        }
+        /* Custom scrollbar for instructions */
+        .how-to-play-scroll {
+            max-height: 280px; /* Increased height for more content */
+            overflow-y: auto; /* Enable vertical scrolling */
+            padding-right: 10px; /* Space for scrollbar */
+            scrollbar-width: thin; /* Firefox */
+            scrollbar-color: #4a5568 #2d3748; /* thumb and track color */
+        }
+        /* Webkit browsers (Chrome, Safari) */
+        .how-to-play-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+        .how-to-play-scroll::-webkit-scrollbar-track {
+            background: #2d3748;
+            border-radius: 4px;
+        }
+        .how-to-play-scroll::-webkit-scrollbar-thumb {
+            background-color: #4a5568;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-gray-100 flex flex-col items-center justify-center font-inter p-4">
+    <div id="root" class="w-full max-w-6xl flex flex-col items-center"></div>
+
+    <!-- React, ReactDOM, and Babel for JSX transformation -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        // Main App component
+        const App = () => {
+            // State variables for game management
+            const [score, setScore] = React.useState(0);
+            const [lives, setLives] = React.useState(5);
+            const [gameOver, setGameOver] = React.useState(false);
+            const [gameStarted, setGameStarted] = React.useState(false);
+            const [selectedPacket, setSelectedPacket] = React.useState(null);
+            const [failureCount, setFailureCount] = React.useState(0); // New state for failure attempts
+
+            // Canvas reference
+            const canvasRef = React.useRef(null);
+            // Use a ref to hold the mutable packets array for the game loop
+            const packetsRef = React.useRef([]);
+
+
+            // Game constants (some defined here, others will be dynamic based on canvas size)
+            const PACKET_TYPES = {
+                // Clean/Allowed Traffic
+                HTTPS: { name: 'HTTPS', port: '443 (TCP)', type: 'clean', color: '#00cc00', shape: 'circle', content: 'HTTPS', reason: 'Secure web browsing, e-commerce, banking, APIs.' },
+                SMTPS: { name: 'SMTPS', port: '587 (TCP)', type: 'clean', color: '#00b3b3', shape: 'circle', content: 'SMTPS', reason: 'Secure email submission from clients/apps.' },
+                SSH: { name: 'SSH', port: '22 (TCP)', type: 'clean', color: '#3366ff', shape: 'circle', content: 'SSH', reason: 'Secure remote administration of servers. (Allowed with strong controls)' },
+                DNS: { name: 'DNS', port: '53 (UDP/TCP)', type: 'clean', color: '#ffd700', shape: 'circle', content: 'DNS', reason: 'Crucial for domain name resolution and internet access.' },
+                NTP: { name: 'NTP', port: '123 (UDP)', type: 'clean', color: '#9370db', shape: 'circle', content: 'NTP', reason: 'Network Time Protocol, important for logging and authentication.' },
+
+                // Malicious/Blocked Traffic
+                GENERIC_BAD: { name: 'Generic Bad', port: 'N/A', type: 'malicious', color: '#ff0000', shape: 'square', content: 'BAD', reason: 'Undefined or suspicious traffic.' },
+                TELNET: { name: 'Telnet', port: '23 (TCP)', type: 'malicious', color: '#ff6600', shape: 'square', content: 'TELNET', reason: 'Unencrypted remote access. Transmits credentials in plaintext; highly insecure. Use SSH instead.' },
+                FTP: { name: 'FTP', port: '20, 21 (TCP)', type: 'malicious', color: '#cc00ff', shape: 'square', content: 'FTP', reason: 'Unencrypted file transfer. Transmits credentials in plaintext; insecure. Block or replace with SFTP/FTPS/SCP.' },
+                SMB: { name: 'NetBIOS/SMB', port: '137, 138 (UDP), 139, 445 (TCP)', type: 'malicious', color: '#8b0000', shape: 'square', content: 'SMB', reason: 'Windows file/print sharing. High-risk, frequently exploited for malware propagation. Block from internet.' },
+                UPNP: { name: 'UPnP', port: '1900 (UDP), 2869 (TCP)', type: 'malicious', color: '#6a5acd', shape: 'square', content: 'UPnP', reason: 'Universal Plug and Play. Often abused by malware to open firewall holes; security risk. Block/Disable.' },
+            };
+            const PACKET_SPEED = 2; // Pixels per frame
+            const PACKET_SIZE = 30; // Size of the packet
+            const FIREWALL_WIDTH = 100;
+            const FIREWALL_HEIGHT = 150;
+            const FIREWALL_COLOR = '#4a5568'; // Dark gray for firewall
+
+            const SPAWN_X = -50; // Packets spawn off-screen left
+
+            // Output Channels constants
+            const ZONE_WIDTH = 100;
+            const ZONE_HEIGHT = 50;
+            const SAFE_ZONE_COLOR = '#2d8c3f'; // Darker green
+            const QUARANTINE_ZONE_COLOR = '#cc3333'; // Darker red
+
+
+            // Function to start a new game
+            const startGame = React.useCallback(() => {
+                setScore(0);
+                setLives(5);
+                setGameOver(false);
+                setGameStarted(true);
+                packetsRef.current = []; // Clear packets in the ref for a new game
+                setSelectedPacket(null);
+                setFailureCount(0); // Reset failure count
+            }, []);
+
+            // Function to generate and add a new packet to the ref
+            const generateNewPacket = React.useCallback(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return; // Should not happen if gameStarted, but defensive check
+
+                const types = Object.values(PACKET_TYPES);
+                const randomType = types[Math.floor(Math.random() * types.length)];
+                const newPacket = {
+                    id: Date.now() + Math.random(),
+                    type: randomType,
+                    x: SPAWN_X,
+                    y: Math.random() * (canvas.height - PACKET_SIZE),
+                    selected: false,
+                    atFirewall: false,
+                    processed: false,
+                    targetX: null,
+                    targetY: null,
+                    speedMultiplier: 1
+                };
+                packetsRef.current.push(newPacket); // Directly add to the mutable ref
+            }, [PACKET_TYPES, PACKET_SIZE]);
+
+            // Main game loop effect
+            React.useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) {
+                    console.warn("Canvas ref is null, skipping effect setup.");
+                    return;
+                }
+
+                const ctx = canvas.getContext('2d');
+                let animationFrameId;
+                let packetGenerationInterval;
+
+                // Function to set canvas dimensions, responsive to window size
+                const setCanvasDimensions = () => {
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight * 0.8;
+                };
+
+                // Set dimensions initially
+                setCanvasDimensions();
+                // Add resize listener to update canvas dimensions
+                window.addEventListener('resize', setCanvasDimensions);
+
+                const gameLoop = () => {
+                    if (!gameStarted || gameOver) return;
+
+                    // Recalculate dynamic positions every frame to adapt to resize
+                    const dynamicFirewallX = canvas.width / 2 - FIREWALL_WIDTH / 2;
+                    const dynamicFirewallY = canvas.height / 2 - FIREWALL_HEIGHT / 2;
+                    const dynamicSafeZoneX = canvas.width - (ZONE_WIDTH + 50);
+                    const dynamicQuarantineZoneX = 50;
+                    const zoneY = (canvas.height - ZONE_HEIGHT) / 2;
+
+                    // Clear canvas
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    // Draw Firewall
+                    ctx.fillStyle = FIREWALL_COLOR;
+                    ctx.fillRect(dynamicFirewallX, dynamicFirewallY, FIREWALL_WIDTH, FIREWALL_HEIGHT);
+                    ctx.font = '16px Inter';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('Firewall', dynamicFirewallX + FIREWALL_WIDTH / 2, dynamicFirewallY + FIREWALL_HEIGHT / 2);
+
+                    // Draw Output Zones
+                    ctx.fillStyle = SAFE_ZONE_COLOR;
+                    ctx.fillRect(dynamicSafeZoneX, zoneY, ZONE_WIDTH, ZONE_HEIGHT);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText('Safe Zone', dynamicSafeZoneX + ZONE_WIDTH / 2, zoneY + ZONE_HEIGHT / 2);
+
+                    ctx.fillStyle = QUARANTINE_ZONE_COLOR;
+                    ctx.fillRect(dynamicQuarantineZoneX, zoneY, ZONE_WIDTH, ZONE_HEIGHT);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText('Quarantine', dynamicQuarantineZoneX + ZONE_WIDTH / 2, zoneY + ZONE_HEIGHT / 2);
+
+                    // Update and draw packets from the ref
+                    const currentPackets = packetsRef.current;
+                    const nextPackets = []; // Build the next state of packets
+
+                    for (let i = 0; i < currentPackets.length; i++) {
+                        const packet = currentPackets[i];
+                        if (packet.processed) {
+                            // Packet is being routed after classification
+                            const dx = packet.targetX - packet.x;
+                            const dy = packet.targetY - packet.y;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+
+                            if (distance > PACKET_SPEED * packet.speedMultiplier) {
+                                nextPackets.push({
+                                    ...packet,
+                                    x: packet.x + dx * (PACKET_SPEED * packet.speedMultiplier) / distance,
+                                    y: packet.y + dy * (PACKET_SPEED * packet.speedMultiplier) / distance,
+                                });
+                            } else {
+                                // Packet reached target, check if it's off-screen
+                                const isOffScreenRight = packet.targetX > packet.x && packet.x > canvas.width + PACKET_SIZE;
+                                const isOffScreenLeft = packet.targetX < packet.x && packet.x < -PACKET_SIZE;
+                                if (!(isOffScreenRight || isOffScreenLeft)) {
+                                    nextPackets.push(packet); // Still in bounds, keep it
+                                }
+                                // Otherwise, it's off-screen and will not be added to nextPackets (effectively filtered out).
+                            }
+                        } else if (packet.atFirewall) {
+                            nextPackets.push({ ...packet, x: dynamicFirewallX }); // Keep at firewall's current dynamic position
+                        } else {
+                            // Packet is approaching the firewall
+                            const newX = packet.x + PACKET_SPEED;
+                            if (newX >= dynamicFirewallX) {
+                                nextPackets.push({ ...packet, x: dynamicFirewallX, atFirewall: true }); // Packet reached firewall
+                            } else {
+                                nextPackets.push({ ...packet, x: newX });
+                            }
+                        }
+                    }
+
+                    // Update the ref with the new array of packets
+                    packetsRef.current = nextPackets;
+
+                    // Draw packets
+                    packetsRef.current.forEach(packet => {
+                        ctx.fillStyle = packet.type.color;
+                        if (packet.type.shape === 'circle') {
+                            ctx.beginPath();
+                            ctx.arc(packet.x + PACKET_SIZE / 2, packet.y + PACKET_SIZE / 2, PACKET_SIZE / 2, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else {
+                            ctx.fillRect(packet.x, packet.y, PACKET_SIZE, PACKET_SIZE);
+                        }
+
+                        // Draw content/icon
+                        ctx.font = `${PACKET_SIZE * 0.5}px Inter`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillText(packet.type.content, packet.x + PACKET_SIZE / 2, packet.y + PACKET_SIZE / 2);
+
+                        // Draw selection border if selected
+                        if (packet.selected) {
+                            ctx.strokeStyle = '#00ffff'; // Cyan border
+                            ctx.lineWidth = 3;
+                            if (packet.type.shape === 'circle') {
+                                ctx.beginPath();
+                                ctx.arc(packet.x + PACKET_SIZE / 2, packet.y + PACKET_SIZE / 2, PACKET_SIZE / 2 + 1.5, 0, Math.PI * 2);
+                                ctx.stroke();
+                            } else {
+                                ctx.strokeRect(packet.x - 1.5, packet.y - 1.5, PACKET_SIZE + 3, PACKET_SIZE + 3);
+                            }
+                        }
+                    });
+
+                    // Request next frame
+                    animationFrameId = requestAnimationFrame(gameLoop);
+                };
+
+                if (gameStarted && !gameOver) {
+                    animationFrameId = requestAnimationFrame(gameLoop);
+                    packetGenerationInterval = setInterval(() => {
+                        generateNewPacket(); // Call the memoized callback
+                    }, 2000); // Generate a new packet every 2 seconds
+                } else {
+                    cancelAnimationFrame(animationFrameId);
+                    clearInterval(packetGenerationInterval);
+                    if (gameOver) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.font = '48px Inter';
+                        ctx.fillStyle = '#333';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('Game Over!', canvas.width / 2, canvas.height / 2 - 40);
+                        ctx.font = '24px Inter';
+                        ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 10);
+                    }
+                }
+
+                // Cleanup function for useEffect
+                return () => {
+                    cancelAnimationFrame(animationFrameId);
+                    clearInterval(packetGenerationInterval);
+                    window.removeEventListener('resize', setCanvasDimensions); // Clean up resize listener
+                };
+            }, [gameStarted, gameOver, score, generateNewPacket]); // Minimal dependencies for stable loop
+
+            // handleCanvasClick is now secondary, but still functional
+            const handleCanvasClick = (event) => {
+                if (!gameStarted || gameOver) return;
+
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = event.clientX - rect.left;
+                const mouseY = event.clientY - rect.top;
+
+                const clickedPacket = packetsRef.current.find(packet =>
+                    packet.atFirewall &&
+                    mouseX >= packet.x && mouseX <= packet.x + PACKET_SIZE &&
+                    mouseY >= packet.y && mouseY <= packet.y + PACKET_SIZE
+                );
+
+                if (clickedPacket) {
+                    const updatedPackets = packetsRef.current.map(p =>
+                        p.id === clickedPacket.id ? { ...p, selected: true } : { ...p, selected: false }
+                    );
+                    packetsRef.current = updatedPackets;
+                    const newSelected = updatedPackets.find(p => p.id === clickedPacket.id);
+                    setSelectedPacket(newSelected);
+                } else {
+                    const updatedPackets = packetsRef.current.map(p => ({ ...p, selected: false }));
+                    packetsRef.current = updatedPackets;
+                    setSelectedPacket(null);
+                }
+            };
+
+            // New function to select the next available packet at the firewall
+            const handleSelectNextPacket = () => {
+                if (!gameStarted || gameOver) return;
+
+                // Find currently selected packet (if any) and its index
+                let currentIndex = -1;
+                if (selectedPacket) {
+                    currentIndex = packetsRef.current.findIndex(p => p.id === selectedPacket.id);
+                }
+
+                // Filter for packets at firewall that are not yet processed
+                const availablePackets = packetsRef.current.filter(p => p.atFirewall && !p.processed);
+
+                if (availablePackets.length === 0) {
+                    setSelectedPacket(null);
+                    packetsRef.current = packetsRef.current.map(p => ({ ...p, selected: false }));
+                    return; // No packets to select
+                }
+
+                // Find the next packet to select based on current index or just the first available
+                let nextPacket = null;
+                if (currentIndex !== -1) {
+                    const currentSelectedAvailableIndex = availablePackets.findIndex(p => p.id === selectedPacket.id);
+                    if (currentSelectedAvailableIndex !== -1 && currentSelectedAvailableIndex < availablePackets.length - 1) {
+                        nextPacket = availablePackets[currentSelectedAvailableIndex + 1];
+                    } else {
+                        // If current is last or not found among available, wrap around to first
+                        nextPacket = availablePackets[0];
+                    }
+                } else {
+                    // No packet currently selected, pick the first available
+                    nextPacket = availablePackets[0];
+                }
+
+                if (nextPacket) {
+                    const updatedPackets = packetsRef.current.map(p =>
+                        p.id === nextPacket.id ? { ...p, selected: true } : { ...p, selected: false }
+                    );
+                    packetsRef.current = updatedPackets;
+                    setSelectedPacket(nextPacket); // Set the selected packet in state
+                } else {
+                    // This case should ideally not be reached if availablePackets.length > 0
+                    setSelectedPacket(null);
+                    packetsRef.current = packetsRef.current.map(p => ({ ...p, selected: false }));
+                }
+            };
+
+
+            // handleRoutePacket needs to modify packetsRef.current
+            const handleRoutePacket = (actionType) => {
+                if (!gameStarted || gameOver || !selectedPacket) return;
+
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
+                // Recalculate dynamic zone X for routing
+                const dynamicSafeZoneX = canvas.width - (ZONE_WIDTH + 50);
+                const dynamicQuarantineZoneX = 50;
+                const targetY = (canvas.height - PACKET_SIZE) / 2; // Center Y for routing
+
+                let correct = false;
+                let targetX = selectedPacket.x; // Default to current position
+
+                // Check if the action matches the packet's type
+                if (actionType === 'allow' && selectedPacket.type.type === 'clean') {
+                    correct = true;
+                    targetX = dynamicSafeZoneX + ZONE_WIDTH + PACKET_SIZE; // Send to safe zone, off-screen right
+                } else if (actionType === 'block' && selectedPacket.type.type === 'malicious') {
+                    correct = true;
+                    targetX = dynamicQuarantineZoneX - PACKET_SIZE; // Send to quarantine, off-screen left
+                } else {
+                    // Incorrect classification
+                    setLives(prevLives => {
+                        const updatedLives = prevLives - 1;
+                        if (updatedLives <= 0) {
+                            setGameOver(true);
+                            setGameStarted(false);
+                        }
+                        return updatedLives;
+                    });
+                    setFailureCount(prevCount => prevCount + 1); // Increment failure count on incorrect
+                }
+
+                if (correct) {
+                    setScore(prevScore => prevScore + 10);
+                }
+
+                // Update selected packet to be processed and set its target in the ref
+                const updatedPackets = packetsRef.current.map(p =>
+                    p.id === selectedPacket.id
+                        ? {
+                            ...p,
+                            processed: true,
+                            atFirewall: false,
+                            selected: false,
+                            targetX: targetX,
+                            targetY: targetY,
+                            speedMultiplier: 5 // Speed up routed packets
+                        }
+                        : p
+                );
+                packetsRef.current = updatedPackets; // Update the ref
+                setSelectedPacket(null); // Deselect after action, which also updates the UI
+
+                // The next animation frame will redraw the canvas with the updated packet state.
+            };
+
+            // Function to end the game
+            const handleFinishGame = () => {
+                setGameOver(true);
+                setGameStarted(false);
+                setSelectedPacket(null); // Deselect any active packet
+                // The game loop useEffect will handle clearing intervals and animation frame.
+            };
+
+            return (
+                <>
+                    <h1 className="text-5xl font-bold mb-8 text-blue-400 drop-shadow-lg text-center animate-pulse">
+                        Packet Sorter: The Firewall Challenge!
+                    </h1>
+
+                    {!gameStarted && !gameOver && (
+                        <div className="flex flex-col items-center">
+                            <button
+                                className="btn btn-primary text-2xl animate-bounce mb-8 shadow-blue-500/50"
+                                onClick={startGame}
+                            >
+                                <i className="fas fa-play-circle mr-3"></i> Start Game
+                            </button>
+
+                            <div className="bg-gradient-to-br from-gray-800 to-gray-700 p-8 rounded-xl shadow-2xl max-w-3xl text-left border border-blue-600">
+                                <p className="mb-4 text-lg text-white font-semibold flex items-center">
+                                    <span role="img" aria-label="girl analyst" className="text-4xl mr-3">👩‍💻</span>
+                                    Hey there, future Cyber Defender! I'm Sharanya Balakrishnan, and I'm here to guide you through the Packet Sorter game. Get ready to test your network security skills!
+                                </p>
+                                <h2 className="text-3xl font-bold text-yellow-400 mb-4 text-center border-b-2 border-yellow-400 pb-2">How to Play</h2>
+                                <div className="text-gray-200 text-base how-to-play-scroll">
+                                    <p className="mb-3">Welcome to **Packet Sorter**, a game where you act as a vigilant firewall!</p>
+                                    <p className="mb-3">Your mission is to inspect incoming data packets and decide if they are **safe** or **malicious**.</p>
+
+                                    <h3 className="text-xl font-semibold text-blue-300 mb-2 mt-4"><i className="fas fa-bullseye mr-2"></i> Objective:</h3>
+                                    <ul className="list-disc list-inside mb-4">
+                                        <li>Correctly sort packets to earn points.</li>
+                                        <li>Avoid incorrect classifications to keep your lives.</li>
+                                    </ul>
+
+                                    <h3 className="text-xl font-semibold text-blue-300 mb-2 mt-4"><i className="fas fa-box-open mr-2"></i> Packet Types:</h3>
+                                    <p className="mb-2 text-yellow-300 font-semibold">🟢 Generally Allowed / Clean Traffic (Circles):</p>
+                                    <ul className="list-disc list-inside ml-4 mb-3">
+                                        <li>**HTTPS (443 TCP):** Secure web browsing, e-commerce, banking, APIs.</li>
+                                        <li>**SMTPS (587 TCP):** Secure email submission from clients/apps.</li>
+                                        <li>**SSH (22 TCP):** Secure remote administration of servers. (Allowed with strong controls like trusted IPs, strong auth, no root login).</li>
+                                        <li>**DNS (53 UDP/TCP):** Crucial for domain name resolution and internet access.</li>
+                                        <li>**NTP (123 UDP):** Network Time Protocol, important for logging and authentication.</li>
+                                    </ul>
+                                    <p className="mb-2 text-red-300 font-semibold">🔴 Generally Blocked or Tightly Restricted / Malicious Traffic (Squares):</p>
+                                    <ul className="list-disc list-inside ml-4 mb-4">
+                                        <li>**BAD (Generic Malicious):** Undefined or suspicious traffic.</li>
+                                        <li>**Telnet (23 TCP):** Unencrypted remote access. Transmits credentials in plaintext; highly insecure. **Always block.** Use SSH instead.</li>
+                                        <li>**FTP (20, 21 TCP):** Unencrypted file transfer. Transmits credentials in plaintext; insecure. **Block or replace** with SFTP/FTPS/SCP.</li>
+                                        <li>**NetBIOS/SMB (137, 138 UDP, 139, 445 TCP):** Windows file/print sharing. High-risk, frequently exploited for malware propagation. **Block from internet.**</li>
+                                        <li>**UPnP (1900 UDP, 2869 TCP):** Universal Plug and Play. Often abused by malware to open firewall holes; security risk. **Block/Disable.**</li>
+                                    </ul>
+
+
+                                    <h3 className="text-xl font-semibold text-blue-300 mb-2 mt-4"><i className="fas fa-gamepad mr-2"></i> Controls:</h3>
+                                    <ol className="list-decimal list-inside mb-4">
+                                        <li>**Wait for Packets:** Packets will approach the central **Firewall** from the left.</li>
+                                        <li>**Select a Packet:** You can **click on any packet** that has reached the Firewall, or use the **"Select Packet" button** to automatically choose the next available one. A cyan border will appear, and its details will be shown below the canvas.</li>
+                                        <li>**Choose Action:**
+                                            <ul className="list-disc list-inside ml-4 mt-1">
+                                                <li>Click **"Allow (Safe)"** (<i className="fas fa-check-circle"></i>) if you believe the selected packet is **Clean**. It will then be sent to the **Safe Zone** on the right.</li>
+                                                <li>Click **"Block (Malicious)"** (<i className="fas fa-times-circle"></i>) if you believe the selected packet is **Malicious**. It will then be sent to **Quarantine** on the left.</li>
+                                            </ul>
+                                        </li>
+                                    </ol>
+
+                                    <h3 className="text-xl font-semibold text-blue-300 mb-2 mt-4"><i className="fas fa-star mr-2"></i> Scoring & Lives:</h3>
+                                    <ul className="list-disc list-inside mb-4">
+                                        <li>You start with 5 lives.</li>
+                                        <li>Correct classifications earn you points.</li>
+                                        <li>Incorrect classifications will cost you a life.</li>
+                                        <li>The game ends when you run out of lives or click "Finish Game".</li>
+                                    </ul>
+                                    <p className="font-semibold text-center mt-4">Good luck, Firewall Commander!</p>
+                                    <p className="text-right text-sm mt-4">Author: Sharanya Balakrishnan</p>
+                                    <p className="text-center text-red-300 font-bold mt-4">For the best experience, please play this game on a larger screen!</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {gameStarted && (
+                        <div className="w-full max-w-6xl flex flex-col items-center">
+                            <div className="flex justify-between w-full p-4 bg-gray-800 rounded-lg shadow-xl mb-4">
+                                <div className="text-xl font-bold text-green-400">Score: {score}</div>
+                                <div className="text-xl font-bold text-red-400">Lives: {lives}</div>
+                            </div>
+
+                            <canvas
+                                ref={canvasRef}
+                                className="w-full h-auto max-h-[calc(100vh-250px)]"
+                                onClick={handleCanvasClick}
+                            ></canvas>
+
+                            {selectedPacket && (
+                                <div className="selected-packet-info">
+                                    <span className="font-semibold text-yellow-400">Packet Type: {selectedPacket.type.name}</span>
+                                    <br />
+                                    <span className="font-semibold text-blue-300">Port: {selectedPacket.type.port}</span>
+                                    <br />
+                                    Decide: Allow or Block?
+                                </div>
+                            )}
+
+                            <div className="flex flex-wrap justify-center gap-4 mt-8">
+                                <button
+                                    className="btn btn-success"
+                                    onClick={() => handleRoutePacket('allow')}
+                                    disabled={!selectedPacket}
+                                >
+                                    <i className="fas fa-check-circle mr-2"></i> Allow (Safe)
+                                </button>
+                                <button
+                                    className="btn btn-danger"
+                                    onClick={() => handleRoutePacket('block')}
+                                    disabled={!selectedPacket}
+                                >
+                                    <i className="fas fa-times-circle mr-2"></i> Block (Malicious)
+                                </button>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleSelectNextPacket}
+                                >
+                                    <i className="fas fa-mouse-pointer mr-2"></i> Select Packet
+                                </button>
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={handleFinishGame}
+                                >
+                                    <i className="fas fa-flag-checkered mr-2"></i> Finish Game
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {gameOver && (
+                        <div className="text-center bg-gray-800 p-8 rounded-lg shadow-xl">
+                            <h2 className="text-4xl font-bold text-red-500 mb-4">Game Over!</h2>
+                            <p className="text-2xl text-white mb-6">Your Final Score: <span className="font-bold text-yellow-400">{score}</span></p>
+
+                            {lives > 0 && failureCount === 0 ? ( // Perfect game: finished with all lives and no errors
+                                <div className="mt-6">
+                                    <img src="https://placehold.co/200x200/4CAF50/ffffff?text=Perfect+Score!" alt="Perfect Score!" className="mx-auto rounded-full shadow-lg mb-4"/>
+                                    <p className="text-xl text-green-400 font-bold">Congratulations! You achieved a perfect game with zero errors. Cybersecurity master!</p>
+                                </div>
+                            ) : failureCount >= 3 ? ( // High failure count, regardless of score
+                                <div className="mt-6">
+                                    <img src="https://placehold.co/200x200/f0ad4e/ffffff?text=Keep+Learning!" alt="Keep Learning!" className="mx-auto rounded-full shadow-lg mb-4"/>
+                                    <p className="text-xl text-yellow-400 font-bold">You faced some tough challenges! Keep practicing, every mistake is a step towards mastery.</p>
+                                    <p className="text-lg text-gray-300 mt-2">Let's play more and learn more!</p>
+                                </div>
+                            ) : score >= 100 ? ( // Good score, with some failures but less than 3
+                                <div className="mt-6">
+                                    <img src="https://placehold.co/200x200/5cb85c/ffffff?text=Great+Job!" alt="Great Job!" className="mx-auto rounded-full shadow-lg mb-4"/>
+                                    <p className="text-xl text-green-400 font-bold">Excellent work, Cyber Defender! You're a true firewall pro!</p>
+                                </div>
+                            ) : ( // Default case: score < 100 and < 3 failures
+                                <div className="mt-6">
+                                    <img src="https://placehold.co/200x200/f0ad4e/ffffff?text=Good+Effort!" alt="Good Effort!" className="mx-auto rounded-full shadow-lg mb-4"/>
+                                    <p className="text-xl text-yellow-400 font-bold">Good effort! There's always room to improve. Keep honing your packet sorting skills!</p>
+                                    <p className="text-lg text-gray-300 mt-2">Let's play more and learn more!</p>
+                                </div>
+                            )}
+
+                            <button
+                                className="btn btn-primary text-xl mt-8"
+                                onClick={startGame}
+                            >
+                                Play Again
+                            </button>
+                        </div>
+                    )}
+                </>
+            );
+        };
+
+        // Render the React App component into the root div
+        const domContainer = document.querySelector('#root');
+        const root = ReactDOM.createRoot(domContainer);
+        root.render(<App />);
+    </script>
+</body>
+</html>
